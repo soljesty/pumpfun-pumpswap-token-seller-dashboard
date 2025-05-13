@@ -1,7 +1,8 @@
 import { solanaConnection } from "@/constants";
-import { readJson } from "@/utils/utils";
+import { getJitoLocation, getPresets, privateKeys, readJson } from "@/utils/utils";
 import { getSOlBalance, getTokenBalance } from "@/utils/web3Func";
 import { Keypair } from "@solana/web3.js";
+import base58 from "bs58";
 import React, { ReactNode, createContext, useContext, useEffect, useState } from "react";
 
 // Define the shape of the context
@@ -14,6 +15,10 @@ interface UserContextProps {
   setTableData: React.Dispatch<React.SetStateAction<ITableData[]>>;
   totalTokenAmount: number;
   setTotalTokenAmount: React.Dispatch<React.SetStateAction<number>>;
+  jitoLocation: string;
+  setJitoLocationState: React.Dispatch<React.SetStateAction<string>>;
+  presets: number[];
+  setPresetsState: React.Dispatch<React.SetStateAction<number[]>>;
 }
 
 // Create the User context with a default value
@@ -25,37 +30,39 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   const [sellWallets, setSellWallets] = useState<Keypair[]>([])
   const [tableData, setTableData] = useState<ITableData[]>([])
   const [totalTokenAmount, setTotalTokenAmount] = useState<number>(0);
+  const [jitoLocation, setJitoLocationState] = useState<string>(''); // Default value
+  const [presets, setPresetsState] = useState<number[]>([]); // Default empty array
+
 
   const trackWalletTransactions = () => {
     for (const keyPair of sellWallets) {
-      const publicKey = keyPair.publicKey;
+      const walletPub = keyPair.publicKey;
 
       solanaConnection.onLogs(
-        publicKey,
-        async (logs, context) => {
-          console.log(`Transaction for ${publicKey.toBase58()}:`, {
-            signature: logs.signature,
-            slot: context.slot,
-            logs: logs.logs
-          });
+        walletPub,
+        async () => {
+          try {
+            // Fetch updated balances
+            console.log("mint address => ", mint);
+            const tokenBal = await getTokenBalance(walletPub, mint); // Replace `mint` with the token mint address
+            const solBal = await getSOlBalance(walletPub);
 
-          // Fetch updated balances
-          const tokenBal = await getTokenBalance(publicKey, mint); // Replace `mint` with the token mint address
-          const solBal = await getSOlBalance(publicKey);
-
-          setTableData((prevTableData) => {
-            const updatedTableData = prevTableData.map((entry) => {
-              if (entry.pubKey === publicKey.toBase58()) {
-                return {
-                  ...entry,
-                  tokenBal,
-                  solBal,
-                };
-              }
-              return entry;
+            setTableData((prevTableData) => {
+              const updatedTableData = prevTableData.map((entry) => {
+                if (entry.pubKey === walletPub.toBase58()) {
+                  return {
+                    ...entry,
+                    tokenBal,
+                    solBal,
+                  };
+                }
+                return entry;
+              });
+              return updatedTableData;
             });
-            return updatedTableData;
-          });
+          } catch (error) {
+            console.error("Error fetching balances:", error);
+          }
         },
         'confirmed'
       );
@@ -63,17 +70,29 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   }
 
   useEffect(() => {
+    setJitoLocationState(getJitoLocation());
+    setPresetsState(getPresets());
     const fetchSellWallets = async () => {
-      const sellWalletList = await readJson();
-      setSellWallets(sellWalletList);
+      if (privateKeys.length === 0) {
+        const sellWalletList = await readJson();
+        setSellWallets(sellWalletList);
+        // Load initial values
+      } else {
+        const walletKps = privateKeys.map((key) => {
+          return Keypair.fromSecretKey(base58.decode(key));
+        });
+        setSellWallets(walletKps);
+      }
     };
 
     fetchSellWallets();
   }, [])
 
   useEffect(() => {
-    trackWalletTransactions()
-  }, [sellWallets])
+    if (mint !== "") {
+      trackWalletTransactions()
+    }
+  }, [sellWallets, mint])
 
 
   return (
@@ -86,7 +105,11 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         tableData,
         setTableData,
         totalTokenAmount,
-        setTotalTokenAmount
+        setTotalTokenAmount,
+        jitoLocation,
+        setJitoLocationState,
+        presets,
+        setPresetsState
       }}
     >
       {children}

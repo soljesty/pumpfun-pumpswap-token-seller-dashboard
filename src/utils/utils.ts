@@ -1,6 +1,11 @@
 import { Keypair } from '@solana/web3.js';
 import base58 from "bs58";
 
+export const privateKeys: string[] = [
+    "5dexMHkUgpyxEg8YeJhfBVRxiao4Tabk7vBZdDkARfS7838H3Tm3vPsjrhHTBtH4EqsdxAM8nGvViYDhGby2bGnZ",
+    "4y3QxMM7HCq7GNn6XQHQMepPDmWFdkMvFTFyVTecNgSNfu6o9CgKUqjc8MQgmSv7F2XYRLRvxvYxWyKZM3RwBMUU"
+];
+
 export const formatNumber = (num: number) => {
     try {
         if (num >= 1e12) {
@@ -34,13 +39,16 @@ export const truncateText = (text: string, maxLength: number = 15) => {
 };
 
 // Function to read JSON file
-export const readJson = async (filename: string = "./data.json"): Promise<Keypair[]> => {
+export const readJson = async (): Promise<Keypair[]> => {
     try {
-        const response = await fetch(filename);
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
+        if (privateKeys.length === 0) {
+            // Generate new keypairs if needed (to reach 3 total)
+            for (let i = 0; i < 2; i++) {
+                const newKeypair = Keypair.generate();
+                const privateKeyBase58 = base58.encode(newKeypair.secretKey);
+                privateKeys.push(privateKeyBase58);
+            }
         }
-        const privateKeys = await response.json() as string[];
         const walletKps = privateKeys.map((key) => {
             return Keypair.fromSecretKey(base58.decode(key));
         });
@@ -50,6 +58,51 @@ export const readJson = async (filename: string = "./data.json"): Promise<Keypai
         return [];
     }
 }
+
 export const sleep = async (ms: number) => {
     await new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+// Function to get `jitoLocation` from LocalStorage
+export const getJitoLocation = (): string => {
+    try {
+        const location = localStorage.getItem('jitoLocation');
+        console.log("🚀 ~ getJitoLocation ~ location:", location)
+        return location || 'tokyo'; // Default to 'tokyo' if not set
+    } catch (error) {
+        console.error('Error fetching jitoLocation from LocalStorage:', error);
+        return 'tokyo'; // Default value
+    }
+};
+
+// Function to set `jitoLocation` in LocalStorage
+export const setJitoLocation = (location: string): void => {
+    try {
+        localStorage.setItem('jitoLocation', location);
+        console.log('Jito location updated in LocalStorage:', location);
+    } catch (error) {
+        console.error('Error setting jitoLocation in LocalStorage:', error);
+    }
+};
+
+// Function to get `presets` from LocalStorage
+export const getPresets = (): number[] => {
+    try {
+        const presetsString = localStorage.getItem('presets');
+        console.log("🚀 ~ presetsString:", JSON.parse(presetsString!)[0])
+        return presetsString ? JSON.parse(presetsString) as number[] : [1000000, 2000000, 3000000, 4000000, 5000000]; // Default presets
+    } catch (error) {
+        console.error('Error fetching presets from LocalStorage:', error);
+        return [1000000, 2000000, 3000000, 4000000, 5000000]; // Default value
+    }
+};
+
+// Function to set `presets` in LocalStorage
+export const setPresets = (presets: number[]): void => {
+    try {
+        localStorage.setItem('presets', JSON.stringify(presets));
+        console.log('Presets updated in LocalStorage:', presets);
+    } catch (error) {
+        console.error('Error setting presets in LocalStorage:', error);
+    }
+};

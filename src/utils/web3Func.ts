@@ -1,8 +1,10 @@
-import { solanaConnection, slippage, jitoFee, location } from "@/constants"
+import { solanaConnection, slippage, jitoFee } from "@/constants"
 import { Commitment, Connection, Finality, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, TransactionMessage, VersionedTransaction, VersionedTransactionResponse } from "@solana/web3.js";
 import { DEFAULT_DECIMALS, PumpFunSDK } from "pumpdotfun-sdk";
+import { PumpAmmSdk } from "@pump-fun/pump-swap-sdk";
 import base58 from "bs58";
 import axios, { AxiosError } from "axios";
+import BN from "bn.js";
 
 export const getTokenBalance = async (walletPublicKey: PublicKey, tokenMintAddress: string) => {
     // Convert addresses to PublicKey objects
@@ -19,7 +21,9 @@ export const getTokenBalance = async (walletPublicKey: PublicKey, tokenMintAddre
     }
 
     // Get the balance of the first token account (assuming one account per mint)
-    const balance = await solanaConnection.getTokenAccountBalance(tokenAccounts.value[0].pubkey);
+    const pubString = tokenAccounts.value[0].pubkey.toString();
+    const ataPub = new PublicKey(pubString);
+    const balance = await solanaConnection.getTokenAccountBalance(ataPub);
 
     console.log(`Balance: ${balance.value.uiAmount}`);
     return balance.value.uiAmount ?? 0;
@@ -32,20 +36,64 @@ export const getSOlBalance = async (walletPublicKey: PublicKey) => {
     return balanceInSol
 }
 
-export const tokenSell = async (signer: Keypair, mintPub: PublicKey, sellAmount: number) => {
+export const tokenSell_pumpfun = async (signer: Keypair, mintPub: PublicKey, sellAmount: number) => {
     const sdk = new PumpFunSDK({
         connection: solanaConnection, // Replace 'rpcEndpoint' with the correct property name
     });
 
     const sellTx = await sdk.getSellInstructionsByTokenAmount(signer.publicKey, mintPub, BigInt(sellAmount * 10 ** DEFAULT_DECIMALS), BigInt(slippage), "confirmed");
 
-    const versionedSellTx = await buildVersionedTx(solanaConnection, signer.publicKey, sellTx);
-    versionedSellTx.sign([signer]);
-
-    return versionedSellTx
+    return sellTx.instructions
 }
 
-export const jitoWithAxios = async (transaction: VersionedTransaction[], payer: Keypair) => {
+export const tokenSell_pumpswap = async (signer: Keypair, pool: PublicKey, sellAmount: number) => {
+    const pSwap = new PumpAmmSdk(solanaConnection)
+
+    const sellAmountBigInt = new BN(sellAmount * 10 ** DEFAULT_DECIMALS);
+    console.log("🚀 ~ consttokenSell_pumpswap= ~ sellAmountBigInt:", sellAmountBigInt)
+    const sellInstructions = await pSwap.swapBaseInstructions(
+        pool,
+        sellAmountBigInt,
+        slippage,
+        "baseToQuote",
+        signer.publicKey
+    );
+    console.log("🚀 ~ consttokenSell_pumpswap= ~ sellInstructions:", sellInstructions)
+
+    return sellInstructions
+}
+
+export const getPoolIdFromTokenAddress = async (mint: string) => {
+    try {
+        const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+        const data = await response.json();
+
+        if (data.pairs && data.pairs.length > 0) {
+            // Filter for PumpSwap pools only
+            interface Pair {
+                dexId: string;
+                chainId: string;
+                pairAddress: string;
+            }
+
+            const pumpSwapPools = data.pairs.filter((pair: Pair) =>
+                pair.dexId === "pumpswap" &&
+                pair.chainId === "solana"
+            );
+
+            if (pumpSwapPools.length > 0) {
+                return pumpSwapPools[0].pairAddress; // Return the first PumpSwap pool found
+            }
+        }
+        console.log("No PumpSwap pool found for token:", mint);
+        return null;
+    } catch (error) {
+        console.error('Error fetching PumpSwap pool ID:', error);
+        return null;
+    }
+}
+
+export const jitoWithAxios = async (transaction: VersionedTransaction[], payer: Keypair, location: string) => {
 
     console.log('Starting Jito transaction execution...');
     const tipAccounts = [
@@ -99,7 +147,19 @@ export const jitoWithAxios = async (transaction: VersionedTransaction[], payer: 
             serializedTransactions.push(serializedTransaction);
         }
 
-        const endpoint = location;
+        const endpoints = {
+            mainnet: 'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
+            amsterdam: 'https://amsterdam.mainnet.block-engine.jito.wtf/api/v1/bundles',
+            frankfurt: 'https://frankfurt.mainnet.block-engine.jito.wtf/api/v1/bundles',
+            ny: 'https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles',
+            tokyo: 'https://tokyo.mainnet.block-engine.jito.wtf/api/v1/bundles',
+        }
+
+        const endpoint = endpoints[location as keyof typeof endpoints];
+        if (!endpoint) {
+            console.error("Invalid location or endpoint:", location);
+            return;
+        }
 
         const requests = axios.post(endpoint, {
             jsonrpc: '2.0',
@@ -109,8 +169,10 @@ export const jitoWithAxios = async (transaction: VersionedTransaction[], payer: 
         })
         console.log('Sending transactions to endpoints...');
 
-        const results = await requests.catch((e) => e);
-        console.log("🚀 ~ jitoWithAxios ~ results:", results);
+        const results = await requests.catch((e) => {
+            console.error("Error response from Jito API:", e.response?.data || e.message);
+            return e;
+        });
 
         // Check if the response is successful
         if (results && results.status === 200 && results.data) {
@@ -136,22 +198,6 @@ export const jitoWithAxios = async (transaction: VersionedTransaction[], payer: 
         return false
     }
 }
-
-const buildVersionedTx = async (
-    connection: Connection,
-    payer: PublicKey,
-    tx: Transaction,
-): Promise<VersionedTransaction> => {
-    const { blockhash } = await connection.getLatestBlockhash();
-
-    const messageV0 = new TransactionMessage({
-        instructions: tx.instructions,
-        recentBlockhash: blockhash,
-        payerKey: payer,
-    }).compileToV0Message();
-
-    return new VersionedTransaction(messageV0);
-};
 
 const getTxDetails = async (
     connection: Connection,

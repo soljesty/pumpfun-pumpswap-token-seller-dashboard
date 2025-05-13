@@ -14,4 +14,9 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['framer-motion']
   },
+  build: {
+    rollupOptions: {
+      external: ["ioredis"],
+    },
+  },
 })
