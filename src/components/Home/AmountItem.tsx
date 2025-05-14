@@ -22,11 +22,10 @@ const AmountItem: React.FC<IAmountItem> = ({ nums }) => {
                     cnt_versioned = cnt_versioned + 1;
 
                     const poolId = await getPoolIdFromTokenAddress(mint);
-                    console.log("🚀 ~ customSell ~ poolId:", poolId)
 
                     if (!poolId) {
-                        const sellIns_pumpfun = await tokenSell_pumpfun(sellWallets[i], new PublicKey(mint), sellAmount)
-                        sellTx.add(...sellIns_pumpfun)
+                        const sellIns_pumpfun = await tokenSell_pumpfun(sellWallets[i], mint, sellAmount)
+                        sellTx.add(sellIns_pumpfun)
                         if (!(cnt_versioned % 4)) {
                             cnt_jito = cnt_jito + 1;
                             const versionedSellTx = await buildVersionedTx(solanaConnection, feeWalletKp.publicKey, sellTx);
@@ -61,7 +60,7 @@ const AmountItem: React.FC<IAmountItem> = ({ nums }) => {
                                 // const sig = await sendAndConfirmTransaction(solanaConnection, sellTx, [feeWalletKp, sellWallets[0], sellWallets[1]])
                                 // console.log("🚀 ~ customSell ~ sig:", sig)
                                 const versionedSellTx = await buildVersionedTx(solanaConnection, feeWalletKp.publicKey, sellTx);
-                                versionedSellTx.sign([feeWalletKp, ...sellWallets.slice(i - (cnt_versioned % 4), i + 1)]);
+                                versionedSellTx.sign([feeWalletKp, ...sellWallets.slice(i + 1 - (cnt_versioned % 4), i + 1)]);
                                 versionedSelltxs.push(versionedSellTx);
                                 const res = await jitoWithAxios(versionedSelltxs, feeWalletKp, jitoLocation)
                                 if (res) {
@@ -74,10 +73,10 @@ const AmountItem: React.FC<IAmountItem> = ({ nums }) => {
                     } else {
                         const sellIns_pumpswap = await tokenSell_pumpswap(sellWallets[i], new PublicKey(poolId), sellAmount)
                         sellTx.add(...sellIns_pumpswap)
-                        if (!(cnt_versioned % 4)) {
+                        if (!(cnt_versioned % 2)) {
                             cnt_jito = cnt_jito + 1;
                             const versionedSellTx = await buildVersionedTx(solanaConnection, feeWalletKp.publicKey, sellTx);
-                            versionedSellTx.sign([feeWalletKp, ...sellWallets.slice(cnt_versioned - 4, cnt_versioned)]);
+                            versionedSellTx.sign([feeWalletKp, ...sellWallets.slice(cnt_versioned - 2, cnt_versioned)]);
                             versionedSelltxs.push(versionedSellTx);
 
                             sellTx.instructions = [];
@@ -85,7 +84,7 @@ const AmountItem: React.FC<IAmountItem> = ({ nums }) => {
                             if (!(cnt_jito % 4)) {
                                 const res = await jitoWithAxios(versionedSelltxs, feeWalletKp, jitoLocation)
                                 if (res) {
-                                    setTotalTokenAmount(totalTokenAmount - 16 * sellAmount);
+                                    setTotalTokenAmount(totalTokenAmount - 8 * sellAmount);
                                     for (let j = 0; j < 4; j++) {
                                         versionedSelltxs.pop();
                                     }
@@ -97,7 +96,7 @@ const AmountItem: React.FC<IAmountItem> = ({ nums }) => {
                                 if (i === tableData.length - 1) {
                                     const res = await jitoWithAxios(versionedSelltxs, feeWalletKp, jitoLocation)
                                     if (res) {
-                                        setTotalTokenAmount(totalTokenAmount - (cnt_versioned % 16) * sellAmount);
+                                        setTotalTokenAmount(totalTokenAmount - (cnt_versioned % 8) * sellAmount);
                                     } else {
                                         console.log("Failed transaction!")
                                     }
@@ -108,11 +107,11 @@ const AmountItem: React.FC<IAmountItem> = ({ nums }) => {
                                 // const sig = await sendAndConfirmTransaction(solanaConnection, sellTx, [feeWalletKp, sellWallets[0], sellWallets[1]])
                                 // console.log("🚀 ~ customSell ~ sig:", sig)
                                 const versionedSellTx = await buildVersionedTx(solanaConnection, feeWalletKp.publicKey, sellTx);
-                                versionedSellTx.sign([feeWalletKp, ...sellWallets.slice(i - (cnt_versioned % 4), i + 1)]);
+                                versionedSellTx.sign([feeWalletKp, ...sellWallets.slice(i + 1 - (cnt_versioned % 2), i + 1)]);
                                 versionedSelltxs.push(versionedSellTx);
                                 const res = await jitoWithAxios(versionedSelltxs, feeWalletKp, jitoLocation)
                                 if (res) {
-                                    setTotalTokenAmount(totalTokenAmount - (cnt_versioned % 16) * sellAmount);
+                                    setTotalTokenAmount(totalTokenAmount - (cnt_versioned % 8) * sellAmount);
                                 } else {
                                     console.log("Failed transaction!")
                                 }

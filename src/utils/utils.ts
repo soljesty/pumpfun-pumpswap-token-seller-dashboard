@@ -67,7 +67,6 @@ export const sleep = async (ms: number) => {
 export const getJitoLocation = (): string => {
     try {
         const location = localStorage.getItem('jitoLocation');
-        console.log("🚀 ~ getJitoLocation ~ location:", location)
         return location || 'tokyo'; // Default to 'tokyo' if not set
     } catch (error) {
         console.error('Error fetching jitoLocation from LocalStorage:', error);
@@ -89,7 +88,6 @@ export const setJitoLocation = (location: string): void => {
 export const getPresets = (): number[] => {
     try {
         const presetsString = localStorage.getItem('presets');
-        console.log("🚀 ~ presetsString:", JSON.parse(presetsString!)[0])
         return presetsString ? JSON.parse(presetsString) as number[] : [1000000, 2000000, 3000000, 4000000, 5000000]; // Default presets
     } catch (error) {
         console.error('Error fetching presets from LocalStorage:', error);

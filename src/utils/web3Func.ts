@@ -1,10 +1,11 @@
 import { solanaConnection, slippage, jitoFee } from "@/constants"
 import { Commitment, Connection, Finality, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, TransactionMessage, VersionedTransaction, VersionedTransactionResponse } from "@solana/web3.js";
-import { DEFAULT_DECIMALS, PumpFunSDK } from "pumpdotfun-sdk";
+import { DEFAULT_DECIMALS } from "pumpdotfun-sdk";
 import { PumpAmmSdk } from "@pump-fun/pump-swap-sdk";
 import base58 from "bs58";
 import axios, { AxiosError } from "axios";
 import BN from "bn.js";
+import { PumpfunAdapter } from "@/SDK/pumpfun";
 
 export const getTokenBalance = async (walletPublicKey: PublicKey, tokenMintAddress: string) => {
     // Convert addresses to PublicKey objects
@@ -36,21 +37,34 @@ export const getSOlBalance = async (walletPublicKey: PublicKey) => {
     return balanceInSol
 }
 
-export const tokenSell_pumpfun = async (signer: Keypair, mintPub: PublicKey, sellAmount: number) => {
-    const sdk = new PumpFunSDK({
-        connection: solanaConnection, // Replace 'rpcEndpoint' with the correct property name
-    });
+export const tokenSell_pumpfun = async (signer: Keypair, mint: string, sellAmount: number) => {
+    const sdk = await PumpfunAdapter.create(
+        solanaConnection, // Replace 'rpcEndpoint' with the correct property name
+        mint,
+        "mainnet"
+    );
 
-    const sellTx = await sdk.getSellInstructionsByTokenAmount(signer.publicKey, mintPub, BigInt(sellAmount * 10 ** DEFAULT_DECIMALS), BigInt(slippage), "confirmed");
+    const reserve = await sdk.getPoolReserves();
+    console.log("🚀 ~ consttokenSell_pumpfun= ~ reserve:", reserve)
 
-    return sellTx.instructions
+    if (reserve.reserveToken1 < sellAmount * 10 ** DEFAULT_DECIMALS) {
+        throw new Error("Insufficient liquidity in the pool to execute the transaction.");
+    }
+
+    const minQuoteAmount = sdk.getSwapQuote(sellAmount * 10 ** DEFAULT_DECIMALS, mint, reserve, slippage)
+
+    const ix = await sdk.getSwapInstruction(sellAmount * 10 ** DEFAULT_DECIMALS, minQuoteAmount, {
+        inputMint: new PublicKey(mint),
+        payer: signer.publicKey
+    })
+
+    return ix
 }
 
 export const tokenSell_pumpswap = async (signer: Keypair, pool: PublicKey, sellAmount: number) => {
     const pSwap = new PumpAmmSdk(solanaConnection)
 
     const sellAmountBigInt = new BN(sellAmount * 10 ** DEFAULT_DECIMALS);
-    console.log("🚀 ~ consttokenSell_pumpswap= ~ sellAmountBigInt:", sellAmountBigInt)
     const sellInstructions = await pSwap.swapBaseInstructions(
         pool,
         sellAmountBigInt,
@@ -85,7 +99,6 @@ export const getPoolIdFromTokenAddress = async (mint: string) => {
                 return pumpSwapPools[0].pairAddress; // Return the first PumpSwap pool found
             }
         }
-        console.log("No PumpSwap pool found for token:", mint);
         return null;
     } catch (error) {
         console.error('Error fetching PumpSwap pool ID:', error);
@@ -129,8 +142,8 @@ export const jitoWithAxios = async (transaction: VersionedTransaction[], payer: 
         jitoFeeTx.sign([payer]);
 
         for (let i = 0; i < transaction.length; i++) {
-            console.log(await solanaConnection.simulateTransaction(transaction[i], undefined))
-            const simulation = await solanaConnection.simulateTransaction(transaction[i], undefined)
+            console.log(await solanaConnection.simulateTransaction(transaction[i], { sigVerify: true }))
+            const simulation = await solanaConnection.simulateTransaction(transaction[i], { sigVerify: true })
             if (simulation.value.err) {
                 console.error("Transaction simulation error:", simulation.value.err)
                 throw new Error("Transaction simulation failed")
